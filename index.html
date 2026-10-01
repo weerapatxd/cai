@@ -900,9 +900,17 @@ const icons = ['', '🏠', '🌱', '💡', '🖍️', '🪥', '🧩', '🎒', '�
 const defaults = {
   images: { ...ORIGINAL },
   videos: {
-    2: ['https://www.youtube.com/watch?v=kYJv13l4GfM'],
-    3: [''],
-    4: ['']
+    2: ['https://weerapatxd.github.io/cai/videos/p2_plant_steps.mp4'],
+    3: [
+      'https://weerapatxd.github.io/cai/videos/p3_checklist.mp4',
+      'https://weerapatxd.github.io/cai/videos/p3_schoolbag.mp4',
+      'https://weerapatxd.github.io/cai/videos/p3_routine.mp4'
+    ],
+    4: [
+      'https://weerapatxd.github.io/cai/videos/p4_writing.mp4',
+      'https://weerapatxd.github.io/cai/videos/p4_talking.mp4',
+      'https://weerapatxd.github.io/cai/videos/p4_drawing.mp4'
+    ]
   },
   gameConfig: {
     game6: {
@@ -972,6 +980,18 @@ const defaults = {
 let media = loadData(KEY, defaults);
 if (media?.gameConfig?.game7 && media.gameConfig.game7.maxScore === 4) {
   media.gameConfig.game7.maxScore = 8;
+}
+// Migrate: if stored videos for page 3 or 4 are empty arrays or blank, replace with GitHub-hosted defaults
+if (!media.videos) media.videos = {};
+if (!media.videos[3] || (media.videos[3].length === 1 && !media.videos[3][0])) {
+  media.videos[3] = defaults.videos[3];
+}
+if (!media.videos[4] || (media.videos[4].length === 1 && !media.videos[4][0])) {
+  media.videos[4] = defaults.videos[4];
+}
+// Migrate page 2: if using old YouTube placeholder URL, switch to GitHub-hosted default
+if (!media.videos[2] || (media.videos[2].length === 1 && (media.videos[2][0] === 'https://www.youtube.com/watch?v=kYJv13l4GfM' || !media.videos[2][0]))) {
+  media.videos[2] = defaults.videos[2];
 }
 let state = loadData(SKEY, {
   name: '',
