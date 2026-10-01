@@ -554,6 +554,11 @@ h3 { font-size: clamp(16px, 1.8vw, 22px); color: #5d4669; }
   border: 2px solid #92e896;
   color: #1f6723;
 }
+.result-box.partial {
+  background: #fff8d6;
+  border: 2px solid #ecd17e;
+  color: #83561a;
+}
 .result-box.error {
   background: #fff0f0;
   border: 2px solid #ffb8b8;
@@ -799,6 +804,35 @@ h3 { font-size: clamp(16px, 1.8vw, 22px); color: #5d4669; }
   justify-content: center;
 }
 
+/* Student History Table in Admin */
+.student-table-wrap {
+  overflow-x: auto;
+  margin: 10px 0;
+  border-radius: 14px;
+  border: 1px solid #ebd0f5;
+}
+.student-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+.student-table th {
+  background: #f4e6fc;
+  color: #4b2d5a;
+  padding: 10px;
+  font-weight: 700;
+  border-bottom: 2px solid #dfbef0;
+}
+.student-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f4e7fa;
+  color: #4c3752;
+}
+.student-table tr:hover {
+  background: #faf4ff;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .shell { padding: 6px 8px; }
@@ -856,6 +890,7 @@ const ORIGINAL={"tooth1": "data:image/webp;base64,UklGRnAzAABXRUJQVlA4IGQzAADw1Q
 const KEY = 'p2-step-media-v3';
 const SKEY = 'p2-step-session-v3';
 const AUTH_KEY = 'p2_admin_auth';
+const STUDENTS_KEY = 'p2_students_history_v1';
 
 // Standard Titles & Icons
 const titles = ['', 'หน้าเมนู', 'การทำงานเป็นขั้นตอน', 'ทำไมต้องเรียงลำดับขั้นตอน', 'วิธีแสดงขั้นตอน', 'ตัวอย่าง: การแปรงฟัน', 'กิจกรรมให้นักเรียนคิด', 'ฝึกปฏิบัติกิจวัตร', 'สรุปความรู้', 'ยินดีด้วย'];
@@ -872,13 +907,13 @@ const defaults = {
   gameConfig: {
     game6: {
       title: '🪥 เกมที่ 1 : เรียงภาพขั้นตอนการแปรงฟัน',
-      maxScore: 10,
+      maxScore: 4,
       answer: [4, 2, 3, 1] // หยิบแปรง(4) -> ยาสีฟัน(2) -> แปรงฟัน(3) -> บ้วนปาก(1)
     },
     game7: {
       titleImg: '🖼️ ส่วนที่ 1 : เรียงภาพกิจวัตรประจำวัน',
       titleTxt: '📝 ส่วนที่ 2 : เรียงข้อความกิจวัตรประจำวัน',
-      maxScore: 10,
+      maxScore: 4,
       answerImg: [2, 1, 4, 3],
       answerTxt: [1, 2, 3, 4],
       words: [
@@ -1069,6 +1104,72 @@ function persistMedia() {
   }
 }
 
+// ---------------------------------------------------------
+// Multi-Student History Recording (บันทึกข้อมูลนักเรียนไม่จำกัด)
+// ---------------------------------------------------------
+function getStudentsHistory() {
+  try {
+    const raw = localStorage.getItem(STUDENTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStudentsHistory(list) {
+  try {
+    localStorage.setItem(STUDENTS_KEY, JSON.stringify(list));
+  } catch {}
+}
+
+function syncStudentRecord() {
+  if (!state.name || !state.name.trim()) return;
+
+  const list = getStudentsHistory();
+  const name = state.name.trim();
+  const g6Cfg = media.gameConfig?.game6 || defaults.gameConfig.game6;
+  const g7Cfg = media.gameConfig?.game7 || defaults.gameConfig.game7;
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  // Find existing record by name or create new
+  let record = list.find(r => r.name.toLowerCase() === name.toLowerCase());
+  if (!record) {
+    record = {
+      id: 'std_' + Date.now() + '_' + Math.floor(Math.random()*1000),
+      name: name,
+      score6: state.scores[6] || 0,
+      max6: g6Cfg.maxScore || 4,
+      score7: state.scores[7] || 0,
+      max7: g7Cfg.maxScore || 4,
+      totalScore: (state.scores[6] || 0) + (state.scores[7] || 0),
+      totalMax: (g6Cfg.maxScore || 4) + (g7Cfg.maxScore || 4),
+      attempts6: state.attempts[6] || 0,
+      attempts7: state.attempts[7] || 0,
+      passed6: Boolean(state.passed[6]),
+      passed7: Boolean(state.passed[7]),
+      date: dateStr
+    };
+    list.unshift(record);
+  } else {
+    // Update existing student's record with highest/latest scores
+    record.score6 = Math.max(record.score6 || 0, state.scores[6] || 0);
+    record.max6 = g6Cfg.maxScore || 4;
+    record.score7 = Math.max(record.score7 || 0, state.scores[7] || 0);
+    record.max7 = g7Cfg.maxScore || 4;
+    record.totalScore = record.score6 + record.score7;
+    record.totalMax = record.max6 + record.max7;
+    record.attempts6 = Math.max(record.attempts6 || 0, state.attempts[6] || 0);
+    record.attempts7 = Math.max(record.attempts7 || 0, state.attempts[7] || 0);
+    record.passed6 = record.passed6 || Boolean(state.passed[6]);
+    record.passed7 = record.passed7 || Boolean(state.passed[7]);
+    record.date = dateStr;
+  }
+
+  saveStudentsHistory(list);
+}
+
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -1098,7 +1199,7 @@ function go(n) {
   render();
 }
 
-// Admin PIN Security (Password = 1234)
+// Admin PIN Security (Password = 1234 - HINT REMOVED)
 function isAdminAuthed() {
   return sessionStorage.getItem(AUTH_KEY) === 'true';
 }
@@ -1117,7 +1218,7 @@ function showPinModal() {
     <div class="modal-overlay" onclick="if(event.target===this)closePinModal()">
       <div class="modal-card" id="pinCard">
         <h2>🔒 รหัสผ่านจัดการสื่อ</h2>
-        <p class="lead">สำหรับครูผู้สอน (รหัส: 1234)</p>
+        <p class="lead" style="margin-bottom:8px">กรุณากรอกรหัสผ่าน 4 หลักสำหรับครูผู้สอน</p>
         <input type="password" id="pinInput" class="pin-input" maxlength="4" placeholder="••••" autofocus onkeydown="if(event.key==='Enter')submitPin()">
         <div class="keypad">
           ${[1,2,3,4,5,6,7,8,9].map(n => `<button class="key-btn" onclick="pressPin('${n}')">${n}</button>`).join('')}
@@ -1162,7 +1263,7 @@ function submitPin() {
   } else {
     card?.classList.add('shake');
     setTimeout(() => card?.classList.remove('shake'), 450);
-    notice('❌ รหัสผ่านไม่ถูกต้อง โปรดลองใหม่ (1234)');
+    notice('❌ รหัสผ่านไม่ถูกต้อง โปรดลองใหม่');
     if (inp) inp.value = '';
   }
 }
@@ -1183,6 +1284,7 @@ function saveName() {
   }
   state.name = val;
   persistState();
+  syncStudentRecord();
   notice('🎉 ยินดีต้อนรับ ' + val + ' เข้าสู่บทเรียน ✨');
   render();
 }
@@ -1214,7 +1316,6 @@ function actions(prev, next) {
 function detectVideoSource(item) {
   if (!item) return null;
 
-  // 1. Uploaded File Object or String Key
   if (typeof item === 'object') {
     if (item.type === 'upload' && item.blobKey) {
       return { type: 'upload', blobKey: item.blobKey, name: item.name || 'ไฟล์วิดีโอที่อัปโหลด', title: item.title || '' };
@@ -1230,12 +1331,10 @@ function detectVideoSource(item) {
     return { type: 'upload', blobKey: key, name: 'ไฟล์วิดีโอที่อัปโหลด' };
   }
 
-  // 2. Parse URL patterns
   try {
     const urlObj = new URL(raw.startsWith('http://') || raw.startsWith('https://') ? raw : 'https://' + raw);
     const host = urlObj.hostname.replace(/^www\./, '').toLowerCase();
 
-    // YouTube: youtu.be, youtube.com, shorts, embed
     if (host === 'youtu.be') {
       const id = urlObj.pathname.slice(1).split(/[?#]/)[0];
       if (/^[\w-]{11}$/.test(id)) {
@@ -1259,7 +1358,6 @@ function detectVideoSource(item) {
       }
     }
 
-    // Google Drive
     if (host.includes('drive.google.com')) {
       const match = urlObj.pathname.match(/\/file\/d\/([-\w]{25,})/) || urlObj.searchParams.get('id');
       const driveId = typeof match === 'string' ? match : (match?.[1] || null);
@@ -1273,7 +1371,6 @@ function detectVideoSource(item) {
       }
     }
 
-    // Vimeo
     if (host.includes('vimeo.com')) {
       const match = urlObj.pathname.match(/\/(\d+)/);
       if (match?.[1]) {
@@ -1286,7 +1383,6 @@ function detectVideoSource(item) {
       }
     }
 
-    // Direct Video File (.mp4, .webm, .ogg, .mov, etc.)
     if (/\.(mp4|webm|ogg|ogv|mov|m4v)(\?.*)?$/i.test(urlObj.pathname)) {
       return {
         type: 'direct',
@@ -1295,7 +1391,6 @@ function detectVideoSource(item) {
       };
     }
 
-    // Generic Website Embed URL
     return {
       type: 'generic',
       url: raw,
@@ -1555,7 +1650,6 @@ function putTile(type, pos) {
   if (!field) return;
   const arr = state[field];
 
-  // Whenever user modifies tiles, clear the result status so stale results don't show
   if (type === 'tooth') {
     delete state.result?.[6];
   } else if (type === 'day' || type === 'text') {
@@ -1626,7 +1720,7 @@ function game(n) {
     : state.game7img.every(Boolean) && state.game7txt.every(Boolean);
 
   const result = state.result?.[n];
-  const maxScore = isGame6 ? (g6Cfg.maxScore || 10) : (g7Cfg.maxScore || 10);
+  const maxScore = isGame6 ? (g6Cfg.maxScore || 4) : (g7Cfg.maxScore || 4);
 
   return `
     ${header(n, isGame6 ? 'ภาพไหนควรทำก่อน-หลัง? จัดเรียงขั้นตอนการแปรงฟันให้ถูกต้อง' : 'ภารกิจเตรียมตัวไปโรงเรียน: เรียงภาพและข้อความให้ถูกต้อง')}
@@ -1652,13 +1746,15 @@ function game(n) {
         </div>
 
         ${result ? `
-          <div class="result-box ${result.ok ? 'success' : 'error'}">
+          <div class="result-box ${result.ok ? 'success' : (result.correctCount > 0 ? 'partial' : 'error')}">
             ${result.ok
-              ? `🎉 ยอดเยี่ยมมาก ${esc(state.name)} ตอบถูกต้องตามเฉลยทั้งหมด!`
-              : `💪 ลำดับยังไม่ถูกต้องตรงตามเฉลย ลองทบทวนลำดับใหม่อีกครั้งนะ ${esc(state.name)}`
+              ? `🎉 ยอดเยี่ยมมาก ${esc(state.name)} วางถูกต้องครบตามเฉลยทั้งหมด!`
+              : (result.correctCount > 0
+                ? `👍 เก่งมาก! ตอบถูกต้อง ${result.correctCount} จาก ${result.total} รายการ (ได้ ${state.scores[n]} คะแนน)`
+                : `💪 ยังไม่ตรงตามเฉลย ลองทบทวนลำดับใหม่อีกครั้งนะ ${esc(state.name)}`)
             }
             <div>คะแนนที่ได้: <span class="score-val">${state.scores[n]}</span> / ${maxScore} คะแนน</div>
-            <small style="font-size: 12px; color: #6b5774">ตรวจคำตอบครั้งที่ ${state.attempts[n]} ${result.ok ? '✨ ผ่านแล้ว!' : '• กรุณาจัดเรียงภาพ/ข้อความใหม่ให้ถูกต้องตามเฉลย'}</small>
+            <small style="font-size: 12px; color: #6b5774">ตรวจคำตอบครั้งที่ ${state.attempts[n]} ${result.ok ? '✨ ผ่านครบแล้ว!' : '• ลองสลับตำแหน่งที่ยังไม่ถูกแล้วตรวจใหม่อีกครั้งได้เลย'}</small>
           </div>
         ` : ''}
       </div>
@@ -1668,7 +1764,7 @@ function game(n) {
 }
 
 // ---------------------------------------------------------
-// Strict Answer Evaluation Logic (Checks against configured Admin Key)
+// Score Evaluation Logic (คะแนนตามจำนวนรูปภาพ/ข้อความที่วางถูกจริง)
 // ---------------------------------------------------------
 function checkAnswer(n) {
   const g6Cfg = media.gameConfig?.game6 || defaults.gameConfig.game6;
@@ -1681,28 +1777,34 @@ function checkAnswer(n) {
 
     state.attempts[6] = (state.attempts[6] || 0) + 1;
 
-    // Retrieve the exact configured answer key from Admin
+    // Retrieve configured answer key from Admin
     const targetAnswer = (g6Cfg.answer && g6Cfg.answer.length === 4)
       ? g6Cfg.answer
       : defaults.gameConfig.game6.answer;
 
-    // Strict validation: every slot position must match targetAnswer exactly
-    const isOk = state.game6.length === 4 && state.game6.every((val, idx) => Number(val) === Number(targetAnswer[idx]));
+    // Count correct placements per slot
+    const correctCount = [0, 1, 2, 3].filter(i => Number(state.game6[i]) === Number(targetAnswer[i])).length;
+    const maxScore = g6Cfg.maxScore || 4;
+
+    // Proportional Score: e.g. if maxScore is 4, 1 pt per correct item
+    const earnedScore = Math.round((correctCount / 4) * maxScore);
+    state.scores[6] = earnedScore;
+
+    const isAllOk = (correctCount === 4);
+    state.passed[6] = isAllOk;
 
     state.result = state.result || {};
-    state.result[6] = { ok: isOk };
+    state.result[6] = { ok: isAllOk, correctCount: correctCount, total: 4 };
 
-    if (isOk) {
-      state.passed[6] = true;
-      const max = g6Cfg.maxScore || 10;
-      const att = state.attempts[6];
-      state.scores[6] = att === 1 ? max : Math.max(Math.round(max * 0.2), Math.round(max - (att - 1) * (max * 0.2)));
-      notice('🎉 เก่งมาก! ตอบถูกต้องตามลำดับเฉลยแล้ว');
+    if (isAllOk) {
+      notice(`🎉 ยอดเยี่ยมมาก! ตอบถูกต้องครบทั้ง 4 ภาพ ได้ ${earnedScore} คะแนน`);
+    } else if (correctCount > 0) {
+      notice(`👍 ถูกต้อง ${correctCount} จาก 4 ภาพ ได้ ${earnedScore} คะแนน`);
     } else {
-      state.passed[6] = false;
-      state.scores[6] = 0;
-      notice('❌ ลำดับภาพยังไม่ถูกต้องตรงตามเฉลย ลองจัดเรียงใหม่อีกครั้งนะ 💗');
+      notice('❌ ยังไม่ตรงลำดับ ลองสังเกตแล้วจัดเรียงใหม่อีกครั้งนะ 💗');
     }
+
+    syncStudentRecord();
   } else if (n === 7) {
     if (!state.game7img || !state.game7img.every(Boolean) || !state.game7txt || !state.game7txt.every(Boolean)) {
       return notice('กรุณาจัดวางภาพและข้อความให้ครบทุกช่องก่อนตรวจนะจ๊ะ');
@@ -1710,7 +1812,7 @@ function checkAnswer(n) {
 
     state.attempts[7] = (state.attempts[7] || 0) + 1;
 
-    // Retrieve exact configured answer keys from Admin
+    // Retrieve configured answer keys from Admin
     const ansImg = (g7Cfg.answerImg && g7Cfg.answerImg.length === 4)
       ? g7Cfg.answerImg
       : defaults.gameConfig.game7.answerImg;
@@ -1719,31 +1821,37 @@ function checkAnswer(n) {
       ? g7Cfg.answerTxt
       : defaults.gameConfig.game7.answerTxt;
 
-    // Strict validation: both image order and text order must match target exactly
-    const imgOk = state.game7img.length === 4 && state.game7img.every((val, idx) => Number(val) === Number(ansImg[idx]));
-    const txtOk = state.game7txt.length === 4 && state.game7txt.every((val, idx) => Number(val) === Number(ansTxt[idx]));
-    const isOk = imgOk && txtOk;
+    // Count correct items for images (4) and texts (4)
+    const imgCorrect = [0, 1, 2, 3].filter(i => Number(state.game7img[i]) === Number(ansImg[i])).length;
+    const txtCorrect = [0, 1, 2, 3].filter(i => Number(state.game7txt[i]) === Number(ansTxt[i])).length;
+    const totalCorrect = imgCorrect + txtCorrect;
+
+    const maxScore = g7Cfg.maxScore || 4;
+    // Proportional Score across 8 items (4 images + 4 texts)
+    const earnedScore = Math.round((totalCorrect / 8) * maxScore);
+    state.scores[7] = earnedScore;
+
+    const isAllOk = (totalCorrect === 8);
+    state.passed[7] = isAllOk;
 
     state.result = state.result || {};
-    state.result[7] = { ok: isOk, imgOk, txtOk };
+    state.result[7] = {
+      ok: isAllOk,
+      imgCorrect: imgCorrect,
+      txtCorrect: txtCorrect,
+      correctCount: totalCorrect,
+      total: 8
+    };
 
-    if (isOk) {
-      state.passed[7] = true;
-      const max = g7Cfg.maxScore || 10;
-      const att = state.attempts[7];
-      state.scores[7] = att === 1 ? max : Math.max(Math.round(max * 0.2), Math.round(max - (att - 1) * (max * 0.2)));
-      notice('🎉 ยอดเยี่ยมมาก! เรียงภาพและข้อความถูกต้องตามเฉลยสมบูรณ์');
+    if (isAllOk) {
+      notice(`🎉 ยอดเยี่ยมมาก! วางภาพและข้อความถูกต้องครบทั้ง 8 รายการ ได้ ${earnedScore} คะแนน`);
+    } else if (totalCorrect > 0) {
+      notice(`👍 ภาพถูก ${imgCorrect}/4, ข้อความถูก ${txtCorrect}/4 รวมได้ ${earnedScore} คะแนน`);
     } else {
-      state.passed[7] = false;
-      state.scores[7] = 0;
-      if (!imgOk && txtOk) {
-        notice('❌ ลำดับรูปภาพยังไม่ถูกต้องตามเฉลย (ข้อความถูกต้องแล้ว)');
-      } else if (imgOk && !txtOk) {
-        notice('❌ ลำดับข้อความยังไม่ถูกต้องตามเฉลย (รูปภาพถูกต้องแล้ว)');
-      } else {
-        notice('❌ ทั้งภาพและข้อความยังไม่ตรงตามเฉลย ลองจัดเรียงใหม่อีกครั้งนะ 💗');
-      }
+      notice('❌ ทั้งภาพและข้อความยังไม่ตรงลำดับ ลองจัดเรียงใหม่อีกครั้งนะ 💗');
     }
+
+    syncStudentRecord();
   }
 
   persistState();
@@ -1765,6 +1873,7 @@ function retryGame(n) {
   delete state.result[n];
   selection = null;
   persistState();
+  syncStudentRecord();
   render();
 }
 
@@ -1799,7 +1908,10 @@ function final() {
   const g6Cfg = media.gameConfig?.game6 || defaults.gameConfig.game6;
   const g7Cfg = media.gameConfig?.game7 || defaults.gameConfig.game7;
   const totalScore = (state.scores[6] || 0) + (state.scores[7] || 0);
-  const totalMax = (g6Cfg.maxScore || 10) + (g7Cfg.maxScore || 10);
+  const totalMax = (g6Cfg.maxScore || 4) + (g7Cfg.maxScore || 4);
+
+  // Sync latest score to persistent student records
+  syncStudentRecord();
 
   return `
     ${header(9)}
@@ -1813,12 +1925,12 @@ function final() {
           <div class="info-card" style="text-align: center">
             <b>🪥 เกมที่ 1: ขั้นตอนการแปรงฟัน</b>
             <div style="font-size: 28px; font-weight: 700; color: #7f3b9c; margin: 4px 0">${state.scores[6]} / ${g6Cfg.maxScore} คะแนน</div>
-            <small>${state.passed[6] ? '✅ ผ่านเรียบร้อย' : '⏳ ยังไม่ผ่าน'}</small>
+            <small>${state.passed[6] ? '✅ ผ่านครบทุกภาพ' : '⭐ คะแนนตามที่ตอบถูก'}</small>
           </div>
           <div class="info-card" style="text-align: center">
             <b>🎒 เกมที่ 2: กิจวัตรก่อนไปโรงเรียน</b>
             <div style="font-size: 28px; font-weight: 700; color: #7f3b9c; margin: 4px 0">${state.scores[7]} / ${g7Cfg.maxScore} คะแนน</div>
-            <small>${state.passed[7] ? '✅ ผ่านเรียบร้อย' : '⏳ ยังไม่ผ่าน'}</small>
+            <small>${state.passed[7] ? '✅ ผ่านครบทุกข้อ' : '⭐ คะแนนตามที่ตอบถูก'}</small>
           </div>
         </div>
 
@@ -2097,8 +2209,8 @@ function renderAdminGamesTab() {
     <div class="admin-section">
       <h3>🪥 จัดการเกมที่ 1 : เรียงภาพแปรงฟัน (หน้า 6)</h3>
       <div class="form-group">
-        <label>คะแนนเต็มของเกมนี้:</label>
-        <input type="number" id="g6MaxScore" class="form-control" style="max-width:140px" min="1" max="100" value="${g6.maxScore || 10}">
+        <label>คะแนนเต็มของเกมนี้ (ให้คะแนนตามจำนวนภาพที่วางถูกจริง):</label>
+        <input type="number" id="g6MaxScore" class="form-control" style="max-width:140px" min="1" max="100" value="${g6.maxScore || 4}">
       </div>
 
       <label style="font-weight:700; font-size:13px; color:#553e61">ลำดับเฉลยที่ถูกต้อง (กดปุ่มลูกศร ◀ ▶ เพื่อสลับลำดับเฉลย):</label>
@@ -2122,8 +2234,8 @@ function renderAdminGamesTab() {
     <div class="admin-section">
       <h3>🎒 จัดการเกมที่ 2 : กิจวัตรก่อนไปโรงเรียน (หน้า 7)</h3>
       <div class="form-group">
-        <label>คะแนนเต็มของเกมนี้:</label>
-        <input type="number" id="g7MaxScore" class="form-control" style="max-width:140px" min="1" max="100" value="${g7.maxScore || 10}">
+        <label>คะแนนเต็มของเกมนี้ (ให้คะแนนตามจำนวนภาพและข้อความที่วางถูกจริง):</label>
+        <input type="number" id="g7MaxScore" class="form-control" style="max-width:140px" min="1" max="100" value="${g7.maxScore || 4}">
       </div>
 
       <label style="font-weight:700; font-size:13px; color:#553e61; margin-top:8px; display:block">เฉลยลำดับรูปภาพ (ส่วนที่ 1):</label>
@@ -2227,8 +2339,8 @@ function saveAdminGames() {
   const g6Score = document.getElementById('g6MaxScore');
   const g7Score = document.getElementById('g7MaxScore');
 
-  if (g6Score) media.gameConfig.game6.maxScore = Math.max(1, parseInt(g6Score.value) || 10);
-  if (g7Score) media.gameConfig.game7.maxScore = Math.max(1, parseInt(g7Score.value) || 10);
+  if (g6Score) media.gameConfig.game6.maxScore = Math.max(1, parseInt(g6Score.value) || 4);
+  if (g7Score) media.gameConfig.game7.maxScore = Math.max(1, parseInt(g7Score.value) || 4);
 
   const words = [];
   for (let i = 0; i < 4; i++) {
@@ -2323,36 +2435,87 @@ function resetAllImages() {
   render();
 }
 
-// Tab 4: System & Student Session
+// Tab 4: System & Multi-Student Records (บันทึกข้อมูลนักเรียนไม่จำกัด)
 function renderAdminSystemTab() {
   const g6Cfg = media.gameConfig?.game6 || defaults.gameConfig.game6;
   const g7Cfg = media.gameConfig?.game7 || defaults.gameConfig.game7;
-  const totalScore = (state.scores[6] || 0) + (state.scores[7] || 0);
-  const totalMax = (g6Cfg.maxScore || 10) + (g7Cfg.maxScore || 10);
+  const history = getStudentsHistory();
 
   return `
     <div class="admin-section">
-      <h3>👥 ข้อมูลนักเรียนในเบราว์เซอร์นี้</h3>
-      <div style="background:#fffcf2; border:2px solid #f6e3a7; border-radius:14px; padding:12px; margin:10px 0">
-        <p>ชื่อนักเรียนปัจจุบัน: <b>${esc(state.name || 'ยังไม่ได้ระบุ')}</b></p>
-        <p>คะแนนเกมที่ 1: <b>${state.scores[6]} / ${g6Cfg.maxScore}</b> (ตรวจ ${state.attempts[6]} ครั้ง)</p>
-        <p>คะแนนเกมที่ 2: <b>${state.scores[7]} / ${g7Cfg.maxScore}</b> (ตรวจ ${state.attempts[7]} ครั้ง)</p>
-        <p style="font-size:16px; margin-top:4px">คะแนนรวมทั้งหมด: <b style="color:#813da3">${totalScore} / ${totalMax} คะแนน</b></p>
+      <h3>👥 ข้อมูลนักเรียนทั้งหมดที่เรียน (บันทึกไม่จำกัดจำนวน)</h3>
+      <p class="hint-text" style="text-align:left">ระบบจะบันทึกรายชื่อและผลคะแนนของนักเรียนทุกคนที่เข้ามาเรียนและทำกิจกรรมโดยอัตโนมัติ</p>
+
+      <div style="display:flex; gap:10px; margin:10px 0; flex-wrap:wrap">
+        <div style="flex:1; min-width:140px; background:#fbf5ff; border:2px solid #e1cbf7; border-radius:14px; padding:10px; text-align:center">
+          <span style="font-size:12px; color:#68467b">จำนวนนักเรียนทั้งหมด</span>
+          <div style="font-size:24px; font-weight:700; color:#5c2d76">${history.length} คน</div>
+        </div>
+        <div style="flex:1; min-width:140px; background:#eafff0; border:2px solid #b7f0c5; border-radius:14px; padding:10px; text-align:center">
+          <span style="font-size:12px; color:#367246">นักเรียนปัจจุบัน</span>
+          <div style="font-size:16px; font-weight:700; color:#276136">${esc(state.name || 'ยังไม่ได้ระบุ')}</div>
+        </div>
       </div>
 
-      <button class="btn pink" onclick="clearStudentData()">🗑️ ล้างชื่อและคะแนนนักเรียน</button>
+      <div style="display:flex; gap:8px; margin:10px 0; flex-wrap:wrap">
+        <button class="btn sm mint" onclick="exportStudentsCSV()">📥 ดาวน์โหลดตารางคะแนน (Excel / CSV)</button>
+        <button class="btn sm pink" onclick="clearAllStudentsHistory()">🗑️ ล้างประวัตินักเรียนทั้งหมด</button>
+      </div>
+
+      <div class="student-table-wrap">
+        <table class="student-table">
+          <thead>
+            <tr>
+              <th>ลำดับ</th>
+              <th>ชื่อ - นามสกุล / ชื่อเล่น</th>
+              <th>เกมที่ 1 (แปรงฟัน)</th>
+              <th>เกมที่ 2 (กิจวัตร)</th>
+              <th>คะแนนรวม</th>
+              <th>วันที่ - เวลาที่บันทึก</th>
+              <th>จัดการ</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${history.length === 0 ? `
+              <tr>
+                <td colspan="7" style="text-align:center; padding:18px; color:#8d7996">ยังไม่มีประวัตินักเรียนที่บันทึก</td>
+              </tr>
+            ` : history.map((s, idx) => `
+              <tr>
+                <td style="font-weight:700; text-align:center">${idx + 1}</td>
+                <td><b>${esc(s.name)}</b></td>
+                <td><span style="font-weight:700; color:#783b99">${s.score6}</span> / ${s.max6} ${s.passed6 ? '✅' : ''}</td>
+                <td><span style="font-weight:700; color:#783b99">${s.score7}</span> / ${s.max7} ${s.passed7 ? '✅' : ''}</td>
+                <td><b style="color:#2f6e2b; font-size:14px">${s.totalScore} / ${s.totalMax}</b></td>
+                <td style="font-size:12px; color:#78667f">${esc(s.date || '-')}</td>
+                <td>
+                  <button class="btn xs pink" onclick="deleteStudentRecord('${s.id}')">ลบ</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <div class="admin-section">
       <h3>♻️ รีเซ็ตการตั้งค่าโรงเรียน</h3>
       <p class="hint-text">คืนค่าข้อความ วิดีโอ เฉลยเกม และคะแนนทั้งหมดกลับสู่ค่าเริ่มต้นของบทเรียน</p>
-      <button class="btn white" onclick="resetAllFactory()">⚠️ คืนค่าเริ่มต้นของบทเรียนทั้งหมด</button>
+      <button class="btn white sm" onclick="resetAllFactory()">⚠️ คืนค่าเริ่มต้นของบทเรียนทั้งหมด</button>
     </div>
   `;
 }
 
-function clearStudentData() {
-  if (!confirm('ต้องการล้างชื่อและคะแนนของนักเรียนในแท็บนี้หรือไม่?')) return;
+function deleteStudentRecord(id) {
+  const list = getStudentsHistory().filter(s => s.id !== id);
+  saveStudentsHistory(list);
+  notice('ลบรายชื่อนักเรียนเรียบร้อย');
+  render();
+}
+
+function clearAllStudentsHistory() {
+  if (!confirm('ยืนยันการล้างประวัตินักเรียนทั้งหมดหรือไม่?')) return;
+  saveStudentsHistory([]);
   sessionStorage.removeItem(SKEY);
   state = {
     name: '',
@@ -2365,8 +2528,27 @@ function clearStudentData() {
     result: {}
   };
   persistState();
-  notice('ล้างข้อมูลนักเรียนเรียบร้อยแล้ว');
+  notice('ล้างประวัตินักเรียนทั้งหมดเรียบร้อยแล้ว');
   render();
+}
+
+function exportStudentsCSV() {
+  const list = getStudentsHistory();
+  if (!list.length) return notice('ไม่มีข้อมูลนักเรียนสำหรับส่งออก');
+
+  let csv = '\uFEFFลำดับ,ชื่อนักเรียน,คะแนนเกม1,คะแนนเต็มเกม1,คะแนนเกม2,คะแนนเต็มเกม2,คะแนนรวม,คะแนนเต็มรวม,วันที่บันทึก\n';
+  list.forEach((s, idx) => {
+    csv += `"${idx + 1}","${(s.name || '').replace(/"/g, '""')}","${s.score6}","${s.max6}","${s.score7}","${s.max7}","${s.totalScore}","${s.totalMax}","${s.date || ''}"\n`;
+  });
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `คะแนนนักเรียน_CAI_ป2_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  notice('ส่งออกไฟล์คะแนน CSV สำเร็จ ✅');
 }
 
 function resetAllFactory() {
