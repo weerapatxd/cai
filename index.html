@@ -911,9 +911,9 @@ const defaults = {
       answer: [4, 2, 3, 1] // หยิบแปรง(4) -> ยาสีฟัน(2) -> แปรงฟัน(3) -> บ้วนปาก(1)
     },
     game7: {
-      titleImg: '🖼️ ส่วนที่ 1 : เรียงภาพกิจวัตรประจำวัน',
-      titleTxt: '📝 ส่วนที่ 2 : เรียงข้อความกิจวัตรประจำวัน',
-      maxScore: 4,
+      titleImg: '🖼️ ส่วนที่ 1 : เรียงภาพกิจวัตรประจำวัน (4 คะแนน)',
+      titleTxt: '📝 ส่วนที่ 2 : เรียงข้อความกิจวัตรประจำวัน (4 คะแนน)',
+      maxScore: 8,
       answerImg: [2, 1, 4, 3],
       answerTxt: [1, 2, 3, 4],
       words: [
@@ -970,6 +970,9 @@ const defaults = {
 
 // Global App State
 let media = loadData(KEY, defaults);
+if (media?.gameConfig?.game7 && media.gameConfig.game7.maxScore === 4) {
+  media.gameConfig.game7.maxScore = 8;
+}
 let state = loadData(SKEY, {
   name: '',
   attempts: { 6: 0, 7: 0 },
@@ -1133,6 +1136,9 @@ function syncStudentRecord() {
   const now = new Date();
   const dateStr = now.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+  const max6 = g6Cfg.maxScore || 4;
+  const max7 = g7Cfg.maxScore || 8;
+
   // Find existing record by name or create new
   let record = list.find(r => r.name.toLowerCase() === name.toLowerCase());
   if (!record) {
@@ -1140,11 +1146,11 @@ function syncStudentRecord() {
       id: 'std_' + Date.now() + '_' + Math.floor(Math.random()*1000),
       name: name,
       score6: state.scores[6] || 0,
-      max6: g6Cfg.maxScore || 4,
+      max6: max6,
       score7: state.scores[7] || 0,
-      max7: g7Cfg.maxScore || 4,
+      max7: max7,
       totalScore: (state.scores[6] || 0) + (state.scores[7] || 0),
-      totalMax: (g6Cfg.maxScore || 4) + (g7Cfg.maxScore || 4),
+      totalMax: max6 + max7,
       attempts6: state.attempts[6] || 0,
       attempts7: state.attempts[7] || 0,
       passed6: Boolean(state.passed[6]),
@@ -1153,17 +1159,17 @@ function syncStudentRecord() {
     };
     list.unshift(record);
   } else {
-    // Update existing student's record with highest/latest scores
-    record.score6 = Math.max(record.score6 || 0, state.scores[6] || 0);
-    record.max6 = g6Cfg.maxScore || 4;
-    record.score7 = Math.max(record.score7 || 0, state.scores[7] || 0);
-    record.max7 = g7Cfg.maxScore || 4;
+    // Record actual current scores from this session
+    record.score6 = state.scores[6] || 0;
+    record.max6 = max6;
+    record.score7 = state.scores[7] || 0;
+    record.max7 = max7;
     record.totalScore = record.score6 + record.score7;
-    record.totalMax = record.max6 + record.max7;
-    record.attempts6 = Math.max(record.attempts6 || 0, state.attempts[6] || 0);
-    record.attempts7 = Math.max(record.attempts7 || 0, state.attempts[7] || 0);
-    record.passed6 = record.passed6 || Boolean(state.passed[6]);
-    record.passed7 = record.passed7 || Boolean(state.passed[7]);
+    record.totalMax = max6 + max7;
+    record.attempts6 = state.attempts[6] || 0;
+    record.attempts7 = state.attempts[7] || 0;
+    record.passed6 = Boolean(state.passed[6]);
+    record.passed7 = Boolean(state.passed[7]);
     record.date = dateStr;
   }
 
@@ -1282,7 +1288,31 @@ function saveName() {
     notice('✏️ กรุณากรอกชื่อก่อนเริ่มเรียนนะจ๊ะ');
     return;
   }
+
+  const prevName = (state.name || '').trim().toLowerCase();
+  const newName = val.toLowerCase();
+  const isDifferent = prevName !== newName;
   state.name = val;
+
+  if (isDifferent) {
+    // When switching student, do not carry over previous student's scores!
+    const history = getStudentsHistory();
+    const existing = history.find(r => r.name.toLowerCase() === newName);
+    if (existing) {
+      state.scores = { 6: existing.score6 || 0, 7: existing.score7 || 0 };
+      state.passed = { 6: Boolean(existing.passed6), 7: Boolean(existing.passed7) };
+      state.attempts = { 6: existing.attempts6 || 0, 7: existing.attempts7 || 0 };
+    } else {
+      state.scores = { 6: 0, 7: 0 };
+      state.passed = { 6: false, 7: false };
+      state.attempts = { 6: 0, 7: 0 };
+    }
+    state.game6 = [null, null, null, null];
+    state.game7img = [null, null, null, null];
+    state.game7txt = [null, null, null, null];
+    state.result = {};
+  }
+
   persistState();
   syncStudentRecord();
   notice('🎉 ยินดีต้อนรับ ' + val + ' เข้าสู่บทเรียน ✨');
@@ -1720,13 +1750,13 @@ function game(n) {
     : state.game7img.every(Boolean) && state.game7txt.every(Boolean);
 
   const result = state.result?.[n];
-  const maxScore = isGame6 ? (g6Cfg.maxScore || 4) : (g7Cfg.maxScore || 4);
+  const maxScore = isGame6 ? (g6Cfg.maxScore || 4) : (g7Cfg.maxScore || 8);
 
   return `
     ${header(n, isGame6 ? 'ภาพไหนควรทำก่อน-หลัง? จัดเรียงขั้นตอนการแปรงฟันให้ถูกต้อง' : 'ภารกิจเตรียมตัวไปโรงเรียน: เรียงภาพและข้อความให้ถูกต้อง')}
     <section class="card">
       <div class="content-area">
-        <p class="lead">สู้ ๆ นะ <b>${esc(state.name)}</b>! ข้อนี้คะแนนเต็ม ${maxScore} คะแนน 🌟</p>
+        <p class="lead">สู้ ๆ นะ <b>${esc(state.name)}</b>! ข้อนี้คะแนนเต็ม ${maxScore} คะแนน ${isGame6 ? '(ภาพละ 1 คะแนน)' : '(ภาพ 4 คะแนน + ข้อความ 4 คะแนน)'} 🌟</p>
         
         ${isGame6 ? `
           <div class="game-container">
@@ -1748,12 +1778,14 @@ function game(n) {
         ${result ? `
           <div class="result-box ${result.ok ? 'success' : (result.correctCount > 0 ? 'partial' : 'error')}">
             ${result.ok
-              ? `🎉 ยอดเยี่ยมมาก ${esc(state.name)} วางถูกต้องครบตามเฉลยทั้งหมด!`
+              ? `🎉 ยอดเยี่ยมมาก ${esc(state.name)} วางถูกต้องครบตามเฉลยทั้งหมด! (ได้คะแนนเต็ม)`
               : (result.correctCount > 0
-                ? `👍 เก่งมาก! ตอบถูกต้อง ${result.correctCount} จาก ${result.total} รายการ (ได้ ${state.scores[n]} คะแนน)`
+                ? (isGame6
+                    ? `👍 เก่งมาก! วางภาพถูกต้อง ${result.correctCount} จาก 4 ภาพ (ได้ ${state.scores[n]} คะแนน)`
+                    : `👍 เก่งมาก! ตอบถูกต้อง ${result.correctCount} จาก 8 รายการ: ภาพถูก ${result.imgCorrect}/4 (${result.imgCorrect} คะแนน) และข้อความถูก ${result.txtCorrect}/4 (${result.txtCorrect} คะแนน)`)
                 : `💪 ยังไม่ตรงตามเฉลย ลองทบทวนลำดับใหม่อีกครั้งนะ ${esc(state.name)}`)
             }
-            <div>คะแนนที่ได้: <span class="score-val">${state.scores[n]}</span> / ${maxScore} คะแนน</div>
+            <div>คะแนนที่ได้: <span class="score-val">${state.scores[n]}</span> / ${maxScore} คะแนน ${isGame6 ? '' : `<small style="font-size:13px; font-weight:normal; color:#5a4261">(ภาพ ${result.imgCorrect || 0}/4 + ข้อความ ${result.txtCorrect || 0}/4)</small>`}</div>
             <small style="font-size: 12px; color: #6b5774">ตรวจคำตอบครั้งที่ ${state.attempts[n]} ${result.ok ? '✨ ผ่านครบแล้ว!' : '• ลองสลับตำแหน่งที่ยังไม่ถูกแล้วตรวจใหม่อีกครั้งได้เลย'}</small>
           </div>
         ` : ''}
@@ -1826,12 +1858,12 @@ function checkAnswer(n) {
     const txtCorrect = [0, 1, 2, 3].filter(i => Number(state.game7txt[i]) === Number(ansTxt[i])).length;
     const totalCorrect = imgCorrect + txtCorrect;
 
-    const maxScore = g7Cfg.maxScore || 4;
-    // Proportional Score across 8 items (4 images + 4 texts)
+    const maxScore = g7Cfg.maxScore || 8;
+    // 4 images (up to 4 pts) + 4 texts (up to 4 pts) = total 8 points (proportional if custom maxScore)
     const earnedScore = Math.round((totalCorrect / 8) * maxScore);
     state.scores[7] = earnedScore;
 
-    const isAllOk = (totalCorrect === 8);
+    const isAllOk = (imgCorrect === 4 && txtCorrect === 4);
     state.passed[7] = isAllOk;
 
     state.result = state.result || {};
@@ -1844,9 +1876,9 @@ function checkAnswer(n) {
     };
 
     if (isAllOk) {
-      notice(`🎉 ยอดเยี่ยมมาก! วางภาพและข้อความถูกต้องครบทั้ง 8 รายการ ได้ ${earnedScore} คะแนน`);
+      notice(`🎉 ยอดเยี่ยมมาก! วางภาพและข้อความถูกต้องครบทั้ง 8 รายการ ได้ ${earnedScore} คะแนนเต็ม`);
     } else if (totalCorrect > 0) {
-      notice(`👍 ภาพถูก ${imgCorrect}/4, ข้อความถูก ${txtCorrect}/4 รวมได้ ${earnedScore} คะแนน`);
+      notice(`👍 ภาพถูก ${imgCorrect}/4 (${imgCorrect} คะแนน), ข้อความถูก ${txtCorrect}/4 (${txtCorrect} คะแนน) รวมได้ ${earnedScore} คะแนน`);
     } else {
       notice('❌ ทั้งภาพและข้อความยังไม่ตรงลำดับ ลองจัดเรียงใหม่อีกครั้งนะ 💗');
     }
@@ -1873,7 +1905,6 @@ function retryGame(n) {
   delete state.result[n];
   selection = null;
   persistState();
-  syncStudentRecord();
   render();
 }
 
@@ -1907,8 +1938,10 @@ function summary() {
 function final() {
   const g6Cfg = media.gameConfig?.game6 || defaults.gameConfig.game6;
   const g7Cfg = media.gameConfig?.game7 || defaults.gameConfig.game7;
+  const max6 = g6Cfg.maxScore || 4;
+  const max7 = g7Cfg.maxScore || 8;
   const totalScore = (state.scores[6] || 0) + (state.scores[7] || 0);
-  const totalMax = (g6Cfg.maxScore || 4) + (g7Cfg.maxScore || 4);
+  const totalMax = max6 + max7;
 
   // Sync latest score to persistent student records
   syncStudentRecord();
@@ -1924,12 +1957,12 @@ function final() {
         <div class="info-columns cols-2" style="max-width: 680px; margin: 14px auto">
           <div class="info-card" style="text-align: center">
             <b>🪥 เกมที่ 1: ขั้นตอนการแปรงฟัน</b>
-            <div style="font-size: 28px; font-weight: 700; color: #7f3b9c; margin: 4px 0">${state.scores[6]} / ${g6Cfg.maxScore} คะแนน</div>
+            <div style="font-size: 28px; font-weight: 700; color: #7f3b9c; margin: 4px 0">${state.scores[6] || 0} / ${max6} คะแนน</div>
             <small>${state.passed[6] ? '✅ ผ่านครบทุกภาพ' : '⭐ คะแนนตามที่ตอบถูก'}</small>
           </div>
           <div class="info-card" style="text-align: center">
             <b>🎒 เกมที่ 2: กิจวัตรก่อนไปโรงเรียน</b>
-            <div style="font-size: 28px; font-weight: 700; color: #7f3b9c; margin: 4px 0">${state.scores[7]} / ${g7Cfg.maxScore} คะแนน</div>
+            <div style="font-size: 28px; font-weight: 700; color: #7f3b9c; margin: 4px 0">${state.scores[7] || 0} / ${max7} คะแนน</div>
             <small>${state.passed[7] ? '✅ ผ่านครบทุกข้อ' : '⭐ คะแนนตามที่ตอบถูก'}</small>
           </div>
         </div>
@@ -2234,8 +2267,8 @@ function renderAdminGamesTab() {
     <div class="admin-section">
       <h3>🎒 จัดการเกมที่ 2 : กิจวัตรก่อนไปโรงเรียน (หน้า 7)</h3>
       <div class="form-group">
-        <label>คะแนนเต็มของเกมนี้ (ให้คะแนนตามจำนวนภาพและข้อความที่วางถูกจริง):</label>
-        <input type="number" id="g7MaxScore" class="form-control" style="max-width:140px" min="1" max="100" value="${g7.maxScore || 4}">
+        <label>คะแนนเต็มของเกมนี้ (เริ่มต้น 8 คะแนน: ภาพ 4 คะแนน + ข้อความ 4 คะแนน):</label>
+        <input type="number" id="g7MaxScore" class="form-control" style="max-width:140px" min="1" max="100" value="${g7.maxScore || 8}">
       </div>
 
       <label style="font-weight:700; font-size:13px; color:#553e61; margin-top:8px; display:block">เฉลยลำดับรูปภาพ (ส่วนที่ 1):</label>
@@ -2340,7 +2373,7 @@ function saveAdminGames() {
   const g7Score = document.getElementById('g7MaxScore');
 
   if (g6Score) media.gameConfig.game6.maxScore = Math.max(1, parseInt(g6Score.value) || 4);
-  if (g7Score) media.gameConfig.game7.maxScore = Math.max(1, parseInt(g7Score.value) || 4);
+  if (g7Score) media.gameConfig.game7.maxScore = Math.max(1, parseInt(g7Score.value) || 8);
 
   const words = [];
   for (let i = 0; i < 4; i++) {
